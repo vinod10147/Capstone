@@ -1,0 +1,139 @@
+version: '3'
+
+services:
+  crawler:
+    image: python
+   
+    command: bash -c "pip install -r /home/requirements.txt && python3 /home/Crawler.py" 
+    volumes:
+      - ./Crawler:/home
+      - ./model:/home/model
+    depends_on:
+      - pymysql
+    ports:
+      - "8355:8355"
+
+
+  trainer:
+    image: ecoron/python36-sklearn
+   
+    command: bash -c "pip install -r /home/requirements.txt && python3 /home/trainer.py" 
+    volumes:
+      - ./Trainer:/home
+      - ./model:/home/model
+    depends_on:
+      - pymysql
+      - spark-master
+    ports:
+      - "8354:8354"
+
+  predictor:
+    image: ecoron/python36-sklearn
+   
+    command: bash -c "pip install pip install -r /home/requirements.txt && python3 /home/predictor.py" 
+    volumes:
+      - ./Predictor:/home
+      - ./model:/home/model
+    depends_on:
+      - trainer
+      - spark-master
+    ports:
+      - "8818:8818"
+      
+  ui:
+    image: python
+   
+    command: bash -c "pip install -r /home/requirements.txt && python3 /home/newsarticle/manage.py runserver 0.0.0.0:8001" 
+    volumes:
+      - ./UI:/home
+    depends_on:
+      - predictor
+      - crawler
+    ports:
+      - "8001:8001"
+
+  mysql:
+    image: mysql
+    environment:
+      MYSQL_DATABASE: 'newsdb'
+      # So you don't have to use root, but you can if you like
+      #MYSQL_USER: 'root'
+      # Password for root access
+      #MYSQL_PASSWORD: 'Murthy@007'
+      MYSQL_ROOT_PASSWORD: 'Murthy@007'
+    ports:
+      - "3306:3306"
+
+  pymysql:
+    image: python
+    command: bash -c "pip install -r /home/requirements.txt && python3 /home/main.py" 
+    volumes:
+      - ./Mysql:/home
+    
+    ports:
+      - "9999:9999"
+
+
+  zookeeper:
+    image: wurstmeister/zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    
+  kafka:
+    image: wurstmeister/kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 17
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://kafka:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1 
+
+  producer:
+      image: python
+      command: bash -c "pip install -r /home/requirements.txt && python3 -u /home/producer.py" 
+      volumes:
+        - ./Producer:/home
+      depends_on:
+        - kafka
+        - crawler
+        - pymysql
+      ports:
+        - "9998:9998"
+
+
+  consumer:
+    image: python
+    command: bash -c "pip install -r /home/requirements.txt && python3 -u /home/cons.py" 
+    volumes:
+      - ./Consumer:/home
+    depends_on:
+      - kafka
+      - pymysql
+
+  spark-master:
+    image: bde2020/spark-master:3.1.1-hadoop3.2
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
+        
+  spark-worker:
+    image: bde2020/spark-worker:3.1.1-hadoop3.2
+    depends_on:
+      - spark-master
+    ports:
+      - "8081:8081"
+    environment:
+      - "SPARK_MASTER=spark://spark-master:7077"
+    
+      

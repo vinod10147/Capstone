@@ -1,0 +1,7 @@
+how to run this project:
+
+docker-compose rm -svf
+
+docker-compose up
+
+Then open http://localhost:8001/news
